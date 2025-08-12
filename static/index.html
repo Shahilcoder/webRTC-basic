@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>webRTC Video Call</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel='stylesheet' type='text/css' media='screen' href='css/styles.css'>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header Section -->
+        <div
+            class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8 p-6 bg-gray-800 rounded-lg shadow-lg">
+            <div id="user-name" class="text-lg font-semibold text-blue-400">DummyUser</div>
+            <div class="flex gap-3">
+                <button id="call"
+                    class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg transform hover:scale-105">
+                    📞 Call
+                </button>
+                <button id="hangup"
+                    class="px-6 py-3 bg-red-400 hover:bg-red-700 text-white font-medium rounded-lg transition-colors duration-200 shadow-md hover:shadow-lg transform hover:scale-105">
+                    ❌ Hangup
+                </button>
+            </div>
+            <div id="answer" class="text-center"></div>
+        </div>
+
+        <!-- Video Section -->
+        <div id="videos" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Local Video -->
+            <div id="video-wrapper" class="relative bg-gray-800 rounded-lg p-4 shadow-lg">
+                <div id="waiting"
+                    class="absolute top-4 left-4 z-10 px-4 py-2 bg-yellow-500 text-yellow-900 font-medium rounded-lg shadow-md">
+                    ⏳ Waiting for answer...
+                </div>
+                <video
+                    class="video-player w-full h-64 lg:h-80 scale-x-[-1] object-cover rounded-lg bg-gray-700"
+                    id="local-video" autoplay playsinline></video>
+            </div>
+
+            <!-- Remote Video -->
+            <div class="bg-gray-800 rounded-lg p-4 shadow-lg">
+                <video class="video-player w-full h-64 lg:h-80 scale-x-[-1] object-cover rounded-lg bg-gray-700" id="remote-video"
+                    autoplay playsinline></video>
+            </div>
+        </div>
+    </div>
+</body>
+
+<!-- Given in the getting started documentation -->
+<script src="/socket.io/socket.io.js"></script>
+<script src="js/scripts.js"></script>
+<script src="js/socketListeners.js"></script>
+
+</html>
