@@ -22,11 +22,12 @@ const io = new socketio(httpsServer, {
     }
 });
 
-const offers = [];
+const commonPayloads = [];
 const connectedSockets = [];
 
 io.on("connection", socket => {
     console.log("Socket Connected");
+
     const userName = socket.handshake.auth.userName;
     const password = socket.handshake.auth.password;
 
@@ -41,26 +42,24 @@ io.on("connection", socket => {
     });
 
     // new client has joined
-    if (offers.length) {
-        socket.emit('availableOffers', offers);
+    if (commonPayloads.length) {
+        socket.emit('signaling:available-commonPayloads', commonPayloads);
     }
 
-    socket.on('newOffer', newOffer => {
-        offers.push({
+    socket.on('signaling:new-offer', newOffer => {
+        commonPayloads.push({
             offererUserName: userName,
             offer: newOffer,
-            offerIceCandidates: [],
+            offererIceCandidates: [],
             answererUserName: null,
             answer: null,
             answererIceCandidates: []
         });
 
-        socket.broadcast.emit('newOfferAwaiting', offers.slice(-1));
+        socket.broadcast.emit('signaling:new-offer-awaiting', commonPayloads.slice(-1));
     });
 
-    socket.on("newAnswer", (offerObj, ackFunction) => {
-        console.log(offerObj);
-
+    socket.on("signaling:new-answer", (offerObj, ackFunction) => {
         const socketToAnswer = connectedSockets.find(s => s.userName === offerObj.offererUserName);
         if (!socketToAnswer) {
             console.log("No matching socket");
@@ -69,50 +68,66 @@ io.on("connection", socket => {
 
         const socketIdToAnswer = socketToAnswer.socketId;
 
-        const offerToUpdate = offers.find(o => o.offererUserName === offerObj.offererUserName);
+        const offerToUpdate = commonPayloads.find(o => o.offererUserName === offerObj.offererUserName);
 
         if (!offerToUpdate) {
             console.log("No offer to update");
             return;
         }
 
-        ackFunction(offerToUpdate.offerIceCandidates);
+        ackFunction(offerToUpdate.offererIceCandidates);
         offerToUpdate.answer = offerObj.answer;
         offerToUpdate.answererUserName = userName;
 
-        socket.to(socketIdToAnswer).emit('answerResponse', offerToUpdate);
+        socket.to(socketIdToAnswer).emit('signaling:answer-response', offerToUpdate);
     });
 
-    socket.on("sendIceCandidateToSignalingServer", iceCandidateObj => {
+    socket.on("signaling:send-ice-candidate", iceCandidateObj => {
         const { didIOffer, iceUserName, iceCandidate } = iceCandidateObj;
 
         if (didIOffer) {
-            const offererOffer = offers.find(o => o.offererUserName === iceUserName);
+            const offererOffer = commonPayloads.find(o => o.offererUserName === iceUserName);
 
             if (offererOffer) {
-                offererOffer.offerIceCandidates.push(iceCandidate);
+                offererOffer.offererIceCandidates.push(iceCandidate);
 
                 if (offererOffer.answererUserName) {
                     const socketToSendTo = connectedSockets.find(s => s.userName === offererOffer.answererUserName);
 
                     if (socketToSendTo) {
-                        socket.to(socketToSendTo.socketId).emit("receivedIceCandidateFromServer", iceCandidate);
+                        socket.to(socketToSendTo.socketId).emit("signaling:responded-with-ice-candidate", iceCandidate);
                     } else {
                         console.log("received ice candidate but no answerer");
                     }
                 }
             }
         } else {
-            const answererOffer = offers.find(o => o.answererUserName === iceUserName);
+            const answererOffer = commonPayloads.find(o => o.answererUserName === iceUserName);
             const socketToSendTo = connectedSockets.find(s => s.userName === answererOffer.offererUserName);
 
             if (socketToSendTo) {
-                socket.to(socketToSendTo.socketId).emit("receivedIceCandidateFromServer", iceCandidate);
+                socket.to(socketToSendTo.socketId).emit("signaling:responded-with-ice-candidate", iceCandidate);
             } else {
                 console.log("Ice candidate received but no offerer");
             }
         }
     });
+
+    socket.on("hang-up", (closerUserName) => {
+        const hangerObj = commonPayloads.find(c => c.offererUserName === closerUserName || c.answererUserName === closerUserName);
+
+        if (!hangerObj) {
+            console.log("No such peer connection found")
+            return;
+        }
+
+        const userSocketIds = [
+            connectedSockets.find(s => s.userName === hangerObj.offererUserName)?.socketId || "",
+            connectedSockets.find(s => s.userName === hangerObj.answererUserName)?.socketId || ""
+        ];
+
+        socket.to(userSocketIds).emit("user-hang-up");
+    })
 });
 
 httpsServer.listen(PORT, (error) => {

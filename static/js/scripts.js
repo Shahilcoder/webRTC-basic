@@ -11,6 +11,9 @@ const socket = io.connect("https://localhost:4001", {
 
 const localVideoEl = document.querySelector("#local-video");
 const remoteVideoEl = document.querySelector("#remote-video");
+const callButton = document.querySelector("#call");
+const hangUpButton = document.querySelector("#hangup");
+const answerEl = document.querySelector('#answer');
 
 let localStream;
 let remoteStream;
@@ -44,7 +47,7 @@ const fetchUserMedia = async () => {
     }
 };
 
-const createPeerConnection = async (offerObj) => {
+const createPeerConnection = async (commonPayload) => {
     try {
 
         peerConnection = new RTCPeerConnection(peerConfig);
@@ -67,7 +70,7 @@ const createPeerConnection = async (offerObj) => {
             console.log("Found ice candidate", event);
 
             if (event.candidate) {
-                socket.emit('sendIceCandidateToSignalingServer', {
+                socket.emit('signaling:send-ice-candidate', {
                     iceCandidate: event.candidate,
                     iceUserName: userName,
                     didIOffer
@@ -83,8 +86,8 @@ const createPeerConnection = async (offerObj) => {
             });
         });
 
-        if (offerObj) {
-            await peerConnection.setRemoteDescription(offerObj.offer);
+        if (commonPayload) {
+            await peerConnection.setRemoteDescription(commonPayload.offer);
         }
 
         return true;
@@ -110,38 +113,44 @@ const call = async () => {
         peerConnection.setLocalDescription(offer);
         didIOffer = true;
         // send offer to signaling server
-        socket.emit('newOffer', offer);
+        socket.emit('signaling:new-offer', offer);
+
+        hangUpButton.setAttribute("style", "display: block");
+        callButton.setAttribute("style", "display: none");
     } catch (error) {
         console.log(error);
     }
 };
 
-const answerOffer = async (offerObj) => {
+const answerOffer = async (commonPayload) => {
     const gotUserMedia = await fetchUserMedia();
 
     if (!gotUserMedia) return;
 
-    const peerConnectionCreated = await createPeerConnection(offerObj);
+    const peerConnectionCreated = await createPeerConnection(commonPayload);
 
     if (!peerConnectionCreated) return;
 
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
 
-    offerObj.answer = answer;
+    commonPayload.answer = answer;
 
-    const offerIceCandidates = await socket.emitWithAck('newAnswer', offerObj);
-    console.log(offerIceCandidates);
+    const offererIceCandidates = await socket.emitWithAck('signaling:new-answer', commonPayload);
+    console.log(offererIceCandidates);
 
-    offerIceCandidates.forEach(c => {
+    offererIceCandidates.forEach(c => {
         peerConnection.addIceCandidate(c);
         console.log("Added ice candidate");
     });
+
+    hangUpButton.setAttribute("style", "display: block");
+    callButton.setAttribute("style", "display: none");
 };
 
-const addAnswer = async (offerObj) => {
+const addAnswer = async (commonPayload) => {
     // client1, the original user sets his remote desc
-    await peerConnection.setRemoteDescription(offerObj.answer);
+    await peerConnection.setRemoteDescription(commonPayload.answer);
 };
 
 const addNewIceCandidate = (iceCandidate) => {
@@ -149,17 +158,44 @@ const addNewIceCandidate = (iceCandidate) => {
     console.log("Added Ice Candidate");
 };
 
+const hangUp = () => {
+    hangUpButton.setAttribute("style", "display: none");
+    callButton.setAttribute("style", "display: block");
 
-document.querySelector("#call").addEventListener("click", call);
+    peerConnection.close();
+    remoteStream = null;
+    remoteVideoEl.srcObject = null;
 
-const createOfferEls = (offers) => {
+    localStream.getTracks().forEach(track => {
+        track.stop();
+    });
+    localStream = null;
+    localVideoEl.srcObject = null;
+};
+
+const hangUpAndEmit = () => {
+    hangUp();
+    socket.emit("hang-up", userName);
+};
+
+callButton.addEventListener("click", call);
+hangUpButton.addEventListener("click", hangUpAndEmit);
+
+const createOfferEls = (commonPayloads) => {
+    callButton.setAttribute("style", "display: none");
+
     // make green answer button for this new offer
-    const answerEl = document.querySelector('#answer');
-    offers.forEach(o => {
-        console.log(o);
-        const newOfferEl = document.createElement('div');
-        newOfferEl.innerHTML = `<button class="btn btn-success col-1">Answer ${o.offererUserName}</button>`
-        newOfferEl.addEventListener('click',()=>answerOffer(o))
-        answerEl.appendChild(newOfferEl);
+    commonPayloads.forEach(p => {
+        const button = document.createElement('button');
+
+        button.className = "bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded mr-2";
+        button.innerText = `Answer ${p.offererUserName}`;
+
+        button.addEventListener('click', (e) => {
+            answerOffer(p);
+            answerEl.removeChild(e.target);
+        });
+
+        answerEl.appendChild(button);
     });
 };
